@@ -20,3 +20,6 @@ inline float noteToFreq(int note) { return (440. / 32.) * pow(2, ((note - 9) / 1
 
 using Sample = float;
 using Channel = int;
+
+#define db2lin(db) std::powf(10.0f, 0.05 * (db))
+#define lin2db(lin) (20.0f * std::log10f(static_cast<float>(lin)))

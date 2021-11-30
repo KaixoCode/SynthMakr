@@ -1,6 +1,6 @@
 #include "Synth.hpp"
 
-Sample Synth::Voice::m_Process(Sample sample, Channel channel)
+Sample Synth::VoiceBase::m_Process(Sample sample, Channel channel)
 {
 	for (auto& i : m_Modules)
 		i->Generate(channel);
@@ -71,6 +71,7 @@ Sample Synth::VoiceBank::Process(Sample sample, Channel channel)
 			for (auto& j : voice->m_Modules)
 				j->Generate(channel);
 
+			voice->Mod();
 			if (voice->m_Chain)
 				out += voice->m_Chain(sample, channel);
 		}
@@ -79,8 +80,12 @@ Sample Synth::VoiceBank::Process(Sample sample, Channel channel)
 }
 
 Synth::Synth(const Settings& s)
-	: settings(s), m_Stream()
+	: settings(s), m_Stream(), Frame{ {.name = s.name } }
 {
+	titlebar.close.color.base.a = 0;
+	titlebar.minimize.color.base.a = 0;
+	titlebar.maximize.color.base.a = 0;
+
 	*this += [this](const KeyPress& e) {
 		if (!e.repeat && keyboard2midi.contains(e.keycode))
 			m_Voices.NotePress(keyboard2midi[e.keycode] + 48, 127);
@@ -111,7 +116,7 @@ Synth::Synth(const Settings& s)
 	});
 
 	GuiCode::Button& _b1 = titlebar.menu.emplace_back<GuiCode::Button>({
-		.name = "Device",
+		.name = "Audio",
 		.graphics = new MenuButton
 	});
 
@@ -171,15 +176,15 @@ Synth::Synth(const Settings& s)
 			.type = GuiCode::Button::Radio,
 			.name = i.name,
 			.graphics = new MenuButton
-			});
+		});
 
 		_b4.settings.callback = [&](bool b) {
 			if (b)
 			{
 				m_Midi.Close();
-				m_Midi.Open({
+				if (m_Midi.Open({
 					.device = i.id,
-					});
+				}) != Midijo::NoError) _b4.State(Selected) = false;
 			}
 		};
 

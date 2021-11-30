@@ -2,46 +2,61 @@
 #include "pch.hpp"
 #include "MenuButton.hpp"
 #include "Modules.hpp"
+#include "Parameter.hpp"
 
 struct Synth : public Frame
 {
-	struct Voice
+	struct VoiceBase
 	{
 		using ChainFun = Function<Sample(Sample, Channel)>;
 
 		virtual ChainFun Chain() = 0;
+		virtual void Mod() { };
 		virtual void NotePress(int note, int velocity) = 0;
 		virtual void NoteRelease(int note) = 0;
 		virtual bool Done() = 0;
 
-		template<class Ty, class ...Args>
+		template<std::derived_from<Module> Ty, class ...Args>
 		Pointer<Ty> Add(Args&& ...args)
 		{
 			return m_Modules.emplace_back(new Ty{ std::forward<Args>(args)... });
 		}
 
+		template<std::derived_from<Module> Ty>
+		Pointer<Ty> Add(const typename Ty::Settings& settings)
+		{
+			return m_Modules.emplace_back(new Ty{ settings });
+		}
+
 		void Init() { m_Chain = Chain(); }
 
 	private:
-		Sample m_Process(Sample sample, Channel channel);
-
 		ChainFun m_Chain;
 		std::list<Pointer<Module>> m_Modules;
+
+		Sample m_Process(Sample sample, Channel channel);
 		friend class Synth;
+	};
+
+	template<class Parent>
+	struct Voice : VoiceBase
+	{
+		Voice(Synth* p) : synth(*dynamic_cast<Parent*>(p)) { }
+		Parent& synth;
 	};
 
 	class VoiceBank
 	{
 	public:
 		template<class Ty>
-		void AddVoices(int voices)
+		void AddVoices(int voices, Synth* parent)
 		{
 			m_Pressed.reserve(m_Pressed.size() + voices);
 			m_Notes.reserve(m_Notes.size() + voices);
 			for (int i = 0; i < voices; i++)
 				m_Notes.push_back(-1),
 				m_Available.push_back(i),
-				m_GeneratorVoices.emplace_back(new Ty{});
+				m_GeneratorVoices.emplace_back(new Ty{ parent });
 
 			for (auto& i : m_GeneratorVoices)
 				i->Init();
@@ -50,10 +65,10 @@ struct Synth : public Frame
 		void NotePress(int note, int velocity);
 		void NoteRelease(int note, int velocity);
 		Sample Process(Sample sample, Channel channel);
-		std::vector<Pointer<Voice>>& Voices() { return m_GeneratorVoices; }
+		std::vector<Pointer<VoiceBase>>& Voices() { return m_GeneratorVoices; }
 
 	private:
-		std::vector<Pointer<Voice>> m_GeneratorVoices;
+		std::vector<Pointer<VoiceBase>> m_GeneratorVoices;
 
 		std::vector<int> m_Notes;
 		std::vector<int> m_Pressed;
@@ -68,7 +83,7 @@ struct Synth : public Frame
 	Synth(const Settings& s = {});
 
 	template<class Ty>
-	void AddVoices(int count) { m_Voices.AddVoices<Ty>(count); }
+	void AddVoices(int count) { m_Voices.AddVoices<Ty>(count, this); }
 	virtual Sample Process(Sample s, Channel channel) { return s; }
 
 private:

@@ -133,7 +133,7 @@ public:
 	float Apply(float s, P& p) override
 	{
 		x[0] = s;
-		y[0] = constrain(p.b0a0 * x[0] + p.b1a0 * x[1] + p.b2a0 * x[2] - p.a1a0 * y[1] - p.a2a0 * y[2], -10000000, 10000000);
+		y[0] = p.b0a0 * x[0] + p.b1a0 * x[1] + p.b2a0 * x[2] - p.a1a0 * y[1] - p.a2a0 * y[2];
 
 		for (int i = sizeof(y) / sizeof(double) - 2; i >= 0; i--)
 			y[i + 1] = y[i];

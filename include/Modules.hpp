@@ -1,6 +1,9 @@
 #pragma once
 #include "pch.hpp"
 #include "Utils.hpp"
+#include "Filter.hpp"
+
+enum Polarity { Positive = 1, Negative = -1 };
 
 using Wavetable = Function<Sample(double, double)>;
 namespace Wavetables
@@ -10,22 +13,56 @@ namespace Wavetables
 	Sample square(double phase, double wtpos);
 }
 
+struct Range
+{
+	double middle = 0;
+	double range = 1;
+};
+
 class Module
 {
 public:
 	static inline double SAMPLE_RATE = 44100.;
 
-	virtual Sample Apply(Sample sample = 0, int channel = 0) { return sample; };
-	virtual void Generate(int channel = 0) {};
+	virtual Sample Apply(Sample sample = 0, Channel channel = 0) { return sample; };
+	virtual void Generate(Channel channel = 0) {};
 };
 
-template<std::invocable<Sample, Channel> T1, class T2>
-auto operator |(T1 t1, T2& t2) { return [t1, &t2](Sample s, Channel c) { return t2.Apply(t1(s, c), c); }; }
+class Generator : public Module
+{
+public:
+	auto operator()(Range range)
+	{
+		return [this, range]()
+		{
+			return sample * range.range + range.middle;
+		};
+	}
 
-template<class T1, class T2>
-auto operator |(T1& t1, T2& t2) { return [&](Sample s, Channel c) { return t2.Apply(t1.Apply(s, c), c); }; }
+	template<std::invocable<Sample> T>
+	auto operator()(T&& fun)
+	{
+		return [this, fun]()
+		{
+			return fun(sample);
+		};
+	}
 
-class Envelope : public Module
+	operator Sample&() { return sample; }
+
+	Sample sample = 0;
+};
+
+template<std::invocable<Sample, Channel> T1, std::derived_from<Module> T2>
+auto operator >>(T1&& t1, T2& t2) { return [t1 = std::move(t1), &t2](Sample s, Channel c) mutable { return t2.Apply(t1(s, c), c); }; }
+
+template<std::invocable<Sample, Channel> T1, std::invocable<Sample, Channel> T2>
+auto operator >>(T1&& t1, T2&& t2) { return [t1 = std::move(t1), t2 = std::move(t2)](Sample s, Channel c) mutable { return t2(t1(s, c), c); }; }
+
+template<std::derived_from<Module> T1, std::derived_from<Module> T2>
+auto operator >>(T1& t1, T2& t2) { return [&](Sample s, Channel c) { return t2.Apply(t1.Apply(s, c), c); }; }
+
+class Envelope : public Generator
 {
 public:
 	virtual void Trigger() = 0;
@@ -46,59 +83,92 @@ public:
 		double attackCurve = 0.5;
 		double decayCurve = 0.5;
 		double releaseCurve = 0.5;
+
+		bool legato = false;
 	} settings;
 
-	ADSR(const Settings& s = {});
+	ADSR(const Settings& s = {}) : settings(s) {};
 
-	Sample Apply(Sample s, Channel) override { return m_Sample * s; }
+	Sample Apply(Sample s, Channel) override { return sample * s; }
 	void Generate(Channel) override;
 	void Trigger() override;
 	void Gate(bool g) override;
 	bool Done() override { return m_Phase == -1; }
 
 private:
-	Sample m_Sample = 0;
 	Sample m_Down = 0;
 	double m_Phase = -1;
 	bool m_Gate = false;
 };
 
-class Oscillator : public Module
+class LPF : public Module
 {
 public:
-	float frequency = 440;
-	float phase = 0;
-	float wtpos = 0;
-	Function<Sample(double, double)> wavetable = Wavetables::saw;
+	struct Settings
+	{
+		double frequency = 2000;
+		double resonance = 1;
+		double mix = 1;
+	} settings;
+	
+	LPF(const Settings& s = {}) : settings(s) {}
+
+	void Generate(Channel) override;
+	Sample Apply(Sample s, Channel) override;
+
+private:
+	BiquadParameters m_Params;
+	BiquadFilter<> m_Filter;
+};
+
+class Oscillator : public Generator
+{
+public:
+	struct Settings
+	{
+		float frequency = 440;
+		float wtpos = 0;
+		int oversample = 8;
+		Function<Sample(double, double)> wavetable = Wavetables::saw;
+	} settings;
+
+	Oscillator(const Settings& s = {}) : settings(s) {}
 
 	void Generate(Channel) override;
 	Sample Apply(Sample s = 0, Channel = 0) override;
 	Sample Offset(double phaseoffset);
 
 private:
-	Sample m_Sample = 0;
+	BiquadParameters m_Params;
+	BiquadFilter<> m_Filter[1];
+	float m_Phase = 0;
 };
 
 class Chorus : public Module
 {
+public:
+	struct Settings
+	{
+		Oscillator oscillator;
+		double mix = 0.5; // Percent
+		double amount = 1;
+		double feedback = 0; // Percent
+		double delay1 = 5; // milliseconds
+		double delay2 = 5; // milliseconds
+		bool stereo = true;
+		bool enableDelay2 = true;
+		Polarity polarity = Negative;
+	} settings;
+
+	Chorus(const Settings& s = {}) : settings(s) {}
+
+	void Channels(int c);
+	Sample Apply(Sample sin, Channel c) override;
+
+private:
 	constexpr static int BUFFER_SIZE = 2048;
-	Oscillator m_Oscillator;
 	std::vector<std::vector<float>> m_Buffers;
 	int m_Position = 0;
 	int m_Delay1t = 5;
 	int m_Delay2t = 5;
-
-public:
-	double mix = 0.5; // Percent
-	double amount = 1;
-	double feedback = 0; // Percent
-	double frequency = 3; // Hz
-	double delay1 = 5; // milliseconds
-	double delay2 = 5; // milliseconds
-	bool stereo = true;
-	bool enableDelay2 = true;
-	enum Polarity { Positive = 1, Negative = -1 } polarity = Negative;
-
-	void Channels(int c);
-	Sample Apply(Sample sin, Channel c) override;
 };
