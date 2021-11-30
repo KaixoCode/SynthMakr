@@ -7,7 +7,7 @@ struct Parameter : public Component
     struct Settings
     {
         double value{}; // Initial value
-        double reset{}; // Value to reset to
+        double reset = value; // Value to reset to
         Vec2<double> range{ -24, 24 };  // Range of the parameter
 
         std::string name = "Param"; // Name of the parameter
@@ -15,7 +15,7 @@ struct Parameter : public Component
         Function<double(double)> scaling = [](double in) { return in; }; // Scaling of the mouse dragging
         Function<double(double)> inverse = [](double in) { return in; }; // Inverse of the scaling of the mouse dragging
         int unit = Units::DECIBEL; // Unit to display after value
-        int decimals = 0; // Amount of decimals to display
+        int decimals = 1; // Amount of decimals to display
 
         float shift = 0.25; // Multiplier for speed of dragging when shift is held
 

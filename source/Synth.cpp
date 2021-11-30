@@ -195,5 +195,12 @@ Synth::Synth(const Settings& s)
 
 Sample Synth::m_Process(Sample sample, Channel channel)
 {
-    return Process(m_Voices.Process(sample, channel), channel);
+    if (!m_Chain)
+        m_Chain = Chain();
+
+    for (auto& i : m_Modules)
+        i->Generate(channel);
+
+    Mod();
+    return m_Chain(m_Voices.Process(sample, channel), channel);
 }

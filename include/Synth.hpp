@@ -6,9 +6,9 @@
 
 struct Synth : public Frame
 {
+    using ChainFun = Function<Sample(Sample, Channel)>;
     struct VoiceBase
     {
-        using ChainFun = Function<Sample(Sample, Channel)>;
 
         virtual ChainFun Chain() = 0;
         virtual void Mod() { };
@@ -84,11 +84,26 @@ struct Synth : public Frame
 
     template<class Ty>
     void AddVoices(int count) { m_Voices.AddVoices<Ty>(count, this); }
-    virtual Sample Process(Sample s, Channel channel) { return s; }
+    virtual ChainFun Chain() = 0;
+    virtual void Mod() { };
+
+    template<std::derived_from<Module> Ty, class ...Args>
+    Pointer<Ty> Add(Args&& ...args)
+    {
+        return m_Modules.emplace_back(new Ty{ std::forward<Args>(args)... });
+    }
+
+    template<std::derived_from<Module> Ty>
+    Pointer<Ty> Add(const typename Ty::Settings& settings)
+    {
+        return m_Modules.emplace_back(new Ty{ settings });
+    }
 
 private:
+    ChainFun m_Chain;
     Sample m_Process(Sample sample, Channel channel);
 
+    std::list<Pointer<Module>> m_Modules;
     VoiceBank m_Voices;
     MidiIn<Windows> m_Midi;
     Stream<Wasapi> m_Stream;

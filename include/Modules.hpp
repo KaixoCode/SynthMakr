@@ -118,7 +118,7 @@ public:
 
 private:
     BiquadParameters m_Params;
-    BiquadFilter<> m_Filter;
+    StereoEqualizer<2, BiquadFilter<>> m_Filter{ m_Params };
 };
 
 class Oscillator : public Generator
@@ -171,4 +171,53 @@ private:
     int m_Position = 0;
     int m_Delay1t = 5;
     int m_Delay2t = 5;
+};
+
+class Delay : public Module
+{
+public:
+    struct Settings
+    {
+        double mix = 0.5; // Percent
+        double delay = 500; // Milliseconds
+        double feedback = 0.4; // Percent
+        double gain = 0; // Input gain in decibel
+        bool stereo = false;
+        bool filter = true;
+        struct {
+            double amount = 0;
+            double rate = 0.4;
+        } mod;
+
+    } settings;
+
+    Delay(const Settings& s = {}) : settings(s) {}
+
+    void Channels(int c);
+    void Generate(Channel c) override;
+    Sample Apply(Sample sin, Channel c) override;
+
+private:
+    std::vector<std::vector<float>> m_Buffers;
+    int BUFFER_SIZE = SAMPLE_RATE * 10;
+    int m_Position = 0;
+
+    Oscillator m_Oscillator{ { .wavetable = Wavetables::sine } };
+
+    SimpleFilterParameters m_Parameters;
+    std::vector<ChannelEqualizer<2, BiquadFilter<>>> m_Equalizers;
+
+    bool m_Dragging = false;
+};
+
+class Gain : public Module
+{
+public:
+    struct Settings
+    {
+        double gain = 0;
+    } settings;
+
+    Gain(const Settings& s = {}) : settings(s) {}
+    Sample Apply(Sample s, Channel) override { return db2lin(settings.gain) * s; }
 };

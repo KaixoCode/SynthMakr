@@ -70,10 +70,12 @@ void ADSR::Gate(bool g)
 
 void Oscillator::Generate(Channel c)
 {
+    if (c != 0)
+        return;
     Sample _avg = 0;
     m_Params.sampleRate = SAMPLE_RATE * settings.oversample;
-    m_Params.f0 = SAMPLE_RATE * 0.1;
-    m_Params.Q = 0.6;
+    m_Params.f0 = SAMPLE_RATE * 0.4;
+    m_Params.Q = 1;
     m_Params.type = FilterType::LowPass;
     m_Params.RecalculateParameters();
 
@@ -170,7 +172,59 @@ void LPF::Generate(Channel)
     m_Params.RecalculateParameters();
 }
 
-Sample LPF::Apply(Sample s, Channel) 
+Sample LPF::Apply(Sample s, Channel c) 
 {
-    return m_Filter.Apply(s, m_Params) * settings.mix + s * (1 - settings.mix);
+    return m_Filter.Apply(s, c) * settings.mix + s * (1 - settings.mix);
+}
+
+// Delay
+
+void Delay::Channels(int c)
+{
+    BUFFER_SIZE = SAMPLE_RATE * 10;
+    m_Equalizers.reserve(c);
+    while (m_Equalizers.size() < c)
+        m_Equalizers.emplace_back(m_Parameters.Parameters());
+
+    m_Buffers.reserve(c);
+    while (m_Buffers.size() < c)
+    {
+        auto& a = m_Buffers.emplace_back();
+        while (a.size() < BUFFER_SIZE)
+            a.emplace_back(0);
+    }
+}
+
+void Delay::Generate(Channel c)
+{
+    Channels(c + 1);
+    m_Parameters.RecalculateParameters();
+}
+
+Sample Delay::Apply(Sample sin, Channel c)
+{
+    float in = sin * db2lin(settings.gain);
+    if (c == 0)
+    {
+        m_Oscillator.settings.frequency = settings.mod.rate;
+        m_Position = (m_Position + 1) % BUFFER_SIZE;
+        m_Oscillator.Generate(c);
+    }
+
+    int s = settings.stereo ? ((c % 2) * 0.5) : 0;
+    int delayt = ((settings.delay + settings.delay * m_Oscillator * settings.mod.amount * 0.01 * 0.9) / 1000.0) * SAMPLE_RATE;
+    delayt = (std::max(delayt, 1)) % BUFFER_SIZE;
+
+    auto& _buffer = m_Buffers[c];
+    int i1 = (int)(m_Position - (settings.stereo ? (delayt + delayt * (c % 2) * 0.5) : delayt) + 3 * BUFFER_SIZE) % BUFFER_SIZE;
+
+    float del1s = _buffer[i1];
+
+    float now = settings.filter ? m_Equalizers[c].Apply(del1s) : del1s;
+
+    int next = settings.stereo ? ((int)(m_Position - (c % 2) * delayt * 0.5 - 1 + 3 * BUFFER_SIZE) % BUFFER_SIZE) : m_Position;
+    _buffer[m_Position] = in;
+    _buffer[next] += now * settings.feedback;
+
+    return sin * (1.0 - settings.mix) + now * settings.mix;
 }

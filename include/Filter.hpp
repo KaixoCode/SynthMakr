@@ -190,3 +190,56 @@ public:
     P& m_Params;
     F m_Filters[N];
 };
+
+// Simple low/high pass band filter
+struct SimpleFilterParameters
+{
+    double freq = 440, width = 1;
+
+    SimpleFilterParameters()
+    {
+        m_Params.emplace_back();
+        m_Params.emplace_back();
+    }
+
+    void RecalculateParameters()
+    {
+        m_Params[0].type = FilterType::HighPass;
+        double from = FromFreq(freq);
+        double a = from - std::pow(width, 2) + 0.001;
+        m_Params[0].f0 = a < 0 ? -ToFreq(-a) : ToFreq(a);
+        m_Params[0].Q = 0.6;
+        m_Params[0].RecalculateParameters();
+        m_Params[1].type = FilterType::LowPass;
+        a = from + std::pow(width, 2) - 0.001;
+        m_Params[1].f0 = a < 0 ? -ToFreq(-a) : ToFreq(a);
+        m_Params[1].Q = 0.6;
+        m_Params[1].RecalculateParameters();
+    }
+
+    double ToFreq(double x)
+    {
+        if (x <= 0)
+            return 0;
+
+        return std::pow(m_Log, (x * (m_Log22000 - m_Log10)) + m_Log10);
+    }
+    double FromFreq(double freq)
+    {
+        static const auto mylog = [](double v, double b) { return std::log(v) / b; };
+
+        auto log = mylog(freq, m_Logg);
+
+        auto norm1 = (log - m_Log10) / (m_Log22000 - m_Log10);
+        return norm1;
+    }
+
+    std::vector<BiquadParameters>& Parameters() { return m_Params; }
+
+private:
+    double m_Log = 10;
+    double m_Logg = std::log(m_Log);
+    double m_Log10 = std::log(10) / m_Logg;
+    double m_Log22000 = std::log(22000) / m_Logg;
+    std::vector<BiquadParameters> m_Params;
+};
